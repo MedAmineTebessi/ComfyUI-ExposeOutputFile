@@ -23,7 +23,24 @@ class ExposeOutputFile:
 
     def expose(self, path: str, webhook_url: str = "", job_id: str = ""):
         p = (path or "").replace("\\", "/").strip()
-
+        
+        # Try to find the actual file by checking various locations
+        possible_paths = [
+            p,  # As provided
+            os.path.join("/opt/ComfyUI/output", p),  # Standard ComfyUI output
+            os.path.join("/opt/ComfyUI/output/3D", os.path.basename(p)),  # 3D subfolder
+            os.path.join("/opt/ComfyUI/output", os.path.basename(p)),  # Just in output
+            os.path.join("/comfyui/output", p),  # Alternative ComfyUI path
+            os.path.join("/comfyui/output/3D", os.path.basename(p)),
+        ]
+        
+        actual_file = None
+        for check_path in possible_paths:
+            if os.path.exists(check_path):
+                actual_file = check_path
+                print(f"Found file at: {actual_file}")
+                break
+        
         # Upload to Webhook if provided (Bypass S3 issues)
         if webhook_url and webhook_url.startswith("http"):
             try:
@@ -31,20 +48,22 @@ class ExposeOutputFile:
                 import requests
                 
                 # Check if file exists
-                if os.path.exists(path):
-                    with open(path, 'rb') as f:
+                if actual_file:
+                    with open(actual_file, 'rb') as f:
                         response = requests.post(
                             webhook_url, 
-                            files={'file': f},
+                            files={'file': (os.path.basename(actual_file), f)},
                             data={'jobId': job_id}
                         )
                     print(f"Webhook response: {response.status_code} - {response.text}")
                 else:
-                    print(f"File not found for webhook: {path}")
+                    print(f"File not found for webhook: {p}")
+                    print(f"Checked paths: {possible_paths}")
             except Exception as e:
                 print(f"Webhook upload failed: {e}")
                 import traceback
                 traceback.print_exc()
+
 
         # Make it robust to different path styles
         # Strip anything up to and including output/ or outputs/
